@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SemVer Checker</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #11182e;
+      --ink: #e8eefc;
+      --muted: #9fb0d6;
+      --accent: #6ea8fe;
+      --chip: #1a2344;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      color: var(--ink); background: radial-gradient(1200px 600px at 20% -10%, #1b2752 0%, #0b1020 50%);
+    }
+    header { padding: 20px 16px 8px; text-align: center; }
+    header h1 { margin: 0; font-size: 1.4rem; font-weight: 700; }
+    header p { margin: 6px 0 0; color: var(--muted); font-size: .95rem; }
+
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    @media (min-width: 980px) { .grid { grid-template-columns: 1fr 1fr; } }
+
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 16px; padding: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    .card h2 { margin: 4px 2px 10px; font-size: 1.05rem; font-weight: 700; }
+
+    textarea, input[type="text"] {
+      width: 100%; background: #0e1530; color: var(--ink); border: 1px solid rgba(255,255,255,.1);
+      border-radius: 12px; padding: 10px 12px; font-size: 0.95rem; outline: none;
+    }
+    textarea { min-height: 260px; resize: vertical; line-height: 1.4; }
+
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .row .grow { flex: 1 1 auto; }
+
+    button {
+      background: var(--accent); color: #06112a; border: none; border-radius: 12px; padding: 10px 14px;
+      font-weight: 700; cursor: pointer; transition: transform .03s ease-in-out, opacity .2s;
+    }
+    button.secondary { background: #1c2a58; color: var(--ink); }
+    button.ghost { background: transparent; border: 1px solid rgba(255,255,255,.12); color: var(--ink); }
+    button:active { transform: translateY(1px); }
+
+    .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; font-size: .85rem; }
+    .pill.err { background: rgba(255,107,107,.12); border: 1px solid rgba(255,107,107,.35); color: #ffd8d8; }
+    .pill.warn { background: rgba(255,209,102,.12); border: 1px solid rgba(255,209,102,.35); color: #fff3cc; }
+    .pill.ok { background: rgba(47,210,127,.12); border: 1px solid rgba(47,210,127,.35); color: #d6ffe8; }
+
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip { background: var(--chip); border: 1px solid rgba(255,255,255,.08); padding: 6px 8px; border-radius: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace; font-size: .85rem; }
+
+    pre {
+      white-space: pre-wrap; word-wrap: break-word; background: #0e1530; border: 1px solid rgba(255,255,255,.1); border-radius: 12px;
+      padding: 10px 12px; font-size: .9rem; max-height: 420px; overflow: auto;
+    }
+    .hint { color: var(--muted); font-size: .85rem; }
+    .footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 12px 0 30px; }
+
+    .banner{display:block;padding:10px 12px;border-radius:12px;margin:8px 0;font-weight:600}
+    .banner.err{background:rgba(255,107,107,.12);border:1px solid rgba(255,107,107,.35);color:#ffd8d8}
+    .banner.warn{background:rgba(255,209,102,.12);border:1px solid rgba(255,209,102,.35);color:#fff3cc}
+    .banner.ok{background:rgba(47,210,127,.12);border:1px solid rgba(47,210,127,.35);color:#d6ffe8}
+  </style>
+
+  <!-- Ajv & ajv-formats from Cloudflare cdnjs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ajv/8.17.1/ajv7.bundle.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ajv/8.17.1/ajv2019.bundle.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ajv/8.17.1/ajv2020.bundle.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ajv-formats/3.0.1/index.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+  <header>
+    <h1>SemVer Checker</h1>
+    <p>Paste a JSON document and check <code>containers.cna.affected[*].versions[*]</code>. Ajv schema validation runs first.</p>
+  </header>
+
+  <div class="wrap">
+    <div id="apiBanner" class="banner" style="display:none"></div>
+
+    <div class="card">
+      <div class="row" style="margin-bottom: 8px; gap: 12px;">
+        <div class="grow">
+          <label for="path" class="hint">Path to <em>affected</em> array (dot path). Default: <code>containers.cna.affected</code></label>
+          <input id="path" type="text" value="containers.cna.affected" spellcheck="false" />
+        </div>
+        <div class="row" style="gap:8px;">
+          <button id="btnRun">Check SemVer Compliance</button>
+        </div>
+      </div>
+      <div class="row" style="margin-bottom: 8px; gap: 12px;">
+        <h2 style="margin:0">CVE Record (JSON)</h2>
+      </div>
+      <textarea id="input" placeholder='Paste a CVE Record JSON document'></textarea>
+    </div>
+
+    <!-- SCHEMA -->
+    <div class="card" style="margin-top: 16px;">
+      <div class="row" style="margin-bottom: 8px; gap: 12px;">
+        <h2 style="margin:0">JSON Schema</h2>
+      </div>
+      <textarea id="schema" placeholder='Paste https://raw.githubusercontent.com/CVEProject/cve-schema/refs/heads/main/schema/docs/CVE_Record_Format_bundled.json'></textarea>
+      <div class="row" style="margin-top: 8px; gap: 8px; align-items:flex-start;">
+        <span id="pillSchemaErr" class="pill err" hidden>Schema errors (<span id="schemaErrCount">0</span>)</span>
+        <span id="pillSchemaOK" class="pill ok" hidden>Schema OK</span>
+      </div>
+      <pre id="schemaErrors" class="hint" style="margin-top:8px;">(paste a schema and click Check SemVer Compliance)</pre>
+    </div>
+
+    <div class="grid" style="margin-top: 16px;">
+      <div class="card">
+        <h2>Results</h2>
+        <div class="row" style="gap: 8px; margin-bottom: 10px;">
+          <span id="pillError" class="pill err" hidden>Errors (<span id="errCount">0</span>)</span>
+          <span id="pillWarn" class="pill warn" hidden>Warnings (<span id="warnCount">0</span>)</span>
+          <span id="pillOk" class="pill ok" hidden>No issues</span>
+        </div>
+
+        <div>
+          <div class="hint">badSemVer2 (space-joined invalid values for <code>semver-2.0.0</code>):</div>
+          <pre id="bad2">(run to see results)</pre>
+        </div>
+        <div style="margin-top: 12px;">
+          <div class="hint">badSemVer (space-joined invalid values for <code>semver</code>):</div>
+          <pre id="bad1">(run to see results)</pre>
+        </div>
+
+        <div style="margin-top: 12px;">
+          <div class="hint">Tokens</div>
+          <div id="chips" class="chips"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Stored JSON</h2>
+        <pre id="out">(blank if semver-2.0.0 errors; otherwise shows stored JSON)</pre>
+        <div class="row" style="margin-top: 8px; gap: 8px;">
+          <button id="btnCopyOut" class="ghost">Copy output</button>
+          <button id="btnDownload" class="secondary">Download JSON</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h2>Rules implemented</h2>
+      <ul class="hint">
+        <li><code>versionType === "semver-2.0.0"</code>: any value in <code>version</code>, <code>lessThan</code>, <code>lessThanOrEqual</code>, and <code>changes[*].at</code> must match the SemVer 2.0.0 regexp; bad values are collected into <code>badSemVer2</code> and the API call has a hard failure. As of now, for correct input, <code>versionType</code> is rewritten to <code>"semver"</code> - this may help consumers who have already set up back-end processing for SemVer, and helps to emphasize that the CVE Program is adopting SemVer 2.0.0 as the one supported SemVer type</li>
+        <li>For that same case, if <code>lessThan</code> or <code>lessThanOrEqual</code> equals <code>"0.0.0"</code> or <code>"0.0.0-0"</code>, change it to <code>"4294967295.0.0"</code> - this supports the proposed semver-2.0.0 input format for ranges with no upper bound, while maintaining compatibility with consumers' algorithms for checking whether an observed version is inside a range</li>
+        <li><code>versionType === "semver"</code>: allow exceptions so that current semver producers do not have to change their processes — <code>version === "0"</code>, and any <code>lessThan</code> / <code>lessThanOrEqual</code> that ends with <code>*</code>. In <code>changes[*].at</code>, allow <code>"0"</code> or strings ending with <code>*</code>. If data fails the SemVer 2.0.0 regexp match and is not an exception, collect those values into <code>badSemVer</code> and set that item’s <code>versionType</code> → <code>"custom"</code> with an API response warning. This provides a transition period for producers who publish invalid semver today.</li>
+        <li>Items without <code>versionType</code>, or with a different <code>versionType</code>, are left unchanged.</li>
+      </ul>
+      <p class="hint">AJV dialect is auto-detected from your schema’s <code>$schema</code> (2020-12 → <code>ajv2020</code>, 2019-09 → <code>ajv2019</code>, draft-07/06 → <code>ajv7</code>). Also, <code>ajv-formats</code> is loaded for common format keywords.</p>
+    </div>
+
+  </div>
+
+  <script>
+    // ---------------- SemVer logic ----------------
+    function validateAndNormalizeAffected(affected) {
+      // SemVer 2.0.0 regex (from semver.org), no global flag
+      var SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|(?:\d*[A-Za-z-][0-9A-Za-z-]*))(?:\.(?:0|[1-9]\d*|(?:\d*[A-Za-z-][0-9A-Za-z-]*)))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+      var FIELDS = ["version", "lessThan", "lessThanOrEqual"];
+      var SENTINEL_MAX = "4294967295.0.0";
+
+      var bad2 = []; // invalid values for semver-2.0.0 (errors)
+      var bad1 = []; // invalid values for semver (warnings)
+
+      for (var i = 0; i < affected.length; i++) {
+        var af = affected[i];
+        var versions = af.versions ? af.versions : [];
+        for (var j = 0; j < versions.length; j++) {
+          var item = versions[j];
+          var t = item.versionType;
+          if (t !== "semver-2.0.0" && t !== "semver") continue;
+
+          // Special mapping for semver-2.0.0 (top-level only; not within changes)
+          if (t === "semver-2.0.0") {
+            if ("lessThan" in item && (item.lessThan === "0.0.0" || item.lessThan === "0.0.0-0")) {
+              item.lessThan = SENTINEL_MAX;
+            }
+            if ("lessThanOrEqual" in item && (item.lessThanOrEqual === "0.0.0" || item.lessThanOrEqual === "0.0.0-0")) {
+              item.lessThanOrEqual = SENTINEL_MAX;
+            }
+          }
+
+          // Gather invalid values (not field names)
+          var invalidVals = [];
+          for (var k = 0; k < FIELDS.length; k++) {
+            var p = FIELDS[k];
+            if (p in item) {
+              var v = item[p];
+              if (t === "semver") {
+                // Exceptions for "semver"
+                var ok = SEMVER_RE.test(v) ||
+                         (p === "version" && v === "0") ||
+                         ((p === "lessThan" || p === "lessThanOrEqual") && v.slice(-1) === "*");
+                if (!ok) invalidVals.push(v);
+              } else {
+                // Strict for "semver-2.0.0"
+                if (!SEMVER_RE.test(v)) invalidVals.push(v);
+              }
+            }
+          }
+
+          var invalidAt = [];
+          var changes = item.changes ? item.changes : [];
+          for (var c = 0; c < changes.length; c++) {
+            var ch = changes[c];
+            if ("at" in ch) {
+              var atv = ch.at;
+              if (t === "semver") {
+                var okAt = SEMVER_RE.test(atv) || atv === "0" || atv.slice(-1) === "*";
+                if (!okAt) invalidAt.push(atv);
+              } else {
+                if (!SEMVER_RE.test(atv)) invalidAt.push(atv);
+              }
+            }
+          }
+
+          if (t === "semver-2.0.0") {
+            if (invalidVals.length || invalidAt.length) bad2 = bad2.concat(invalidVals, invalidAt);
+            // Always normalize "semver-2.0.0" → "semver"
+            item.versionType = "semver";
+          } else {
+            // t === "semver"
+            if (invalidVals.length || invalidAt.length) {
+              bad1 = bad1.concat(invalidVals, invalidAt);
+              // Downgrade only when something is invalid after exceptions
+              item.versionType = "custom";
+            }
+          }
+        }
+      }
+
+      return { badSemVer2: bad2.join(" "), badSemVer: bad1.join(" ") };
+    }
+
+    // ---------------- AJV helpers ----------------
+    function detectDialect(schema) {
+      var sch = (schema && schema.$schema) ? String(schema.$schema) : "";
+      if (sch.indexOf("2020-12") !== -1) return "ajv2020";
+      if (sch.indexOf("2019-09") !== -1) return "ajv2019";
+      if (sch.indexOf("draft-07") !== -1 || sch.indexOf("draft-06") !== -1) return "ajv7";
+      return "ajv2020";
+    }
+    function createAjv(dialect) {
+      var g = window[dialect];
+      if (!g) throw new Error("AJV bundle '" + dialect + "' not loaded");
+      var Ctor = g.Ajv || g.default || g;
+      var inst = new Ctor({ allErrors: true, strict: false });
+      var addFormats = (window.ajvFormats && (window.ajvFormats.default || window.ajvFormats)) || null;
+      if (typeof addFormats === 'function') addFormats(inst);
+      return inst;
+    }
+    function validateWithAjv(doc, schema) {
+      var dialect = detectDialect(schema);
+      var ajv = createAjv(dialect);
+      var validate = ajv.compile(schema);
+      var ok = validate(doc);
+      return { ok: !!ok, errors: validate.errors || [], dialect: dialect };
+    }
+
+    // ---------------- UI helpers ----------------
+    function getByPath(root, path) {
+      if (!path) return root;
+      var keys = path.split(".");
+      var cur = root;
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        if (!k) continue;
+        if (cur == null || typeof cur !== "object" || !(k in cur)) return undefined;
+        cur = cur[k];
+      }
+      return cur;
+    }
+    function setText(id, text) { document.getElementById(id).textContent = text; }
+    function show(id, on) { document.getElementById(id).hidden = !on; }
+    function chipify(spaceJoined) {
+      var box = document.getElementById('chips');
+      box.innerHTML = '';
+      if (!spaceJoined) return;
+      var parts = spaceJoined.split(/\s+/).filter(Boolean);
+      for (var i=0; i<parts.length; i++) {
+        var el = document.createElement('span');
+        el.className = 'chip';
+        el.textContent = parts[i];
+        box.appendChild(el);
+      }
+    }
+    function download(filename, text) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], {type: 'application/json'}));
+      a.download = filename; a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1500);
+    }
+
+    // ---------------- Wire up after DOM ready ----------------
+    function init() {
+      var elInput = document.getElementById('input');
+      var elPath = document.getElementById('path');
+      var elSchema = document.getElementById('schema');
+
+      document.getElementById('btnRun').addEventListener('click', function() {
+        var raw = elInput.value;
+        if (!raw.trim()) { alert('Please paste a JSON document.'); return; }
+        var schRaw = elSchema.value;
+        if (!schRaw.trim()) { alert('Please paste a JSON Schema.'); return; }
+
+        var doc, schema;
+        try { doc = JSON.parse(raw); } catch (e) { alert('Invalid JSON: ' + e.message); return; }
+        try { schema = JSON.parse(schRaw); } catch (e) { alert('Invalid JSON Schema: ' + e.message); return; }
+
+        // 1) AJV validation
+        var val = validateWithAjv(doc, schema);
+        var hasSchemaErr = !val.ok;
+        show('pillSchemaOK', !hasSchemaErr);
+        show('pillSchemaErr', hasSchemaErr);
+        setText('schemaErrCount', hasSchemaErr ? (val.errors ? val.errors.length : 0) : 0);
+        setText('schemaErrors', hasSchemaErr ? JSON.stringify(val.errors, null, 2) : '(schema valid; dialect: ' + val.dialect + ')');
+
+        if (hasSchemaErr) {
+          setText('bad2', '(skipped due to schema errors)');
+          setText('bad1', '(skipped due to schema errors)');
+          show('pillError', false); show('pillWarn', false); show('pillOk', false);
+          setText('out', JSON.stringify(doc, null, 2));
+          document.getElementById('chips').innerHTML = '';
+          var banner0 = document.getElementById('apiBanner');
+          banner0.style.display = 'none'; banner0.textContent = '';
+          return;
+        }
+
+        // 2) Locate affected array
+        var path = elPath.value.trim() || 'containers.cna.affected';
+        var affected = getByPath(doc, path);
+        if (!affected || !Array.isArray(affected)) {
+          alert('Could not find an array at path: ' + path);
+          return;
+        }
+
+        // 3) Run SemVer normalization (mutates doc)
+        var res = validateAndNormalizeAffected(affected);
+
+        // Results UI
+        setText('bad2', res.badSemVer2 || '(empty)');
+        setText('bad1', res.badSemVer || '(empty)');
+        chipify((res.badSemVer2 + ' ' + res.badSemVer).trim());
+
+        var hasErr = !!res.badSemVer2;
+        var hasWarn = !!res.badSemVer;
+        show('pillError', hasErr); setText('errCount', hasErr ? res.badSemVer2.split(/\s+/).filter(Boolean).length : 0);
+        show('pillWarn', hasWarn); setText('warnCount', hasWarn ? res.badSemVer.split(/\s+/).filter(Boolean).length : 0);
+        show('pillOk', !hasErr && !hasWarn);
+
+        // 4) Outcome banner (top)
+        var banner = document.getElementById('apiBanner');
+        if (hasErr) {
+          banner.className = 'banner err';
+          banner.innerHTML = 'API Response: semver-2.0.0 validation FAILED for [' + res.badSemVer2 + ']';
+          banner.style.display = 'block';
+        } else if (hasWarn) {
+          banner.className = 'banner warn';
+          banner.innerHTML = 'API Response: The submission was successful. However, some version data was labeled <b>semver</b> but does not follow the latest SemVer specification: [' + res.badSemVer + ']. It has been re-labeled <b>custom</b> to maintain compatibility. A future update will reject submissions with incorrect <b>semver</b> labeling.';
+          banner.style.display = 'block';
+        } else {
+          banner.className = 'banner ok';
+          banner.innerHTML = 'API Response: The submission was successful.';
+          banner.style.display = 'block';
+        }
+
+        // 5) Stored JSON (blank on semver-2.0.0 errors)
+        setText('out', hasErr ? '' : JSON.stringify(doc, null, 2));
+      });
+
+      document.getElementById('btnFormat').addEventListener('click', function() {
+        var raw = elInput.value; if (!raw.trim()) return;
+        try { elInput.value = JSON.stringify(JSON.parse(raw), null, 2); }
+        catch(e) { alert('Invalid JSON: ' + e.message); }
+      });
+
+      document.getElementById('btnCopyIn').addEventListener('click', function(){
+        navigator.clipboard.writeText(elInput.value).then(function(){}, function(){});
+      });
+      document.getElementById('btnCopyOut').addEventListener('click', function(){
+        var v = document.getElementById('out').textContent;
+        navigator.clipboard.writeText(v).then(function(){}, function(){});
+      });
+      document.getElementById('btnDownload').addEventListener('click', function(){
+        var v = document.getElementById('out').textContent;
+        if (!v || v.indexOf('{') === -1) { alert('Nothing to download yet. Click Check SemVer Compliance first.'); return; }
+        download('stored.json', v);
+      });
+
+      // Samples
+      document.getElementById('btnSample').addEventListener('click', function(){
+        var sample = {
+          "abc": {
+            "def": {
+              "affected": [
+                {
+                  "id": "pkg-1",
+                  "versions": [
+                    { "versionType": "semver-2.0.0", "version": "1.0.0", "lessThan": "0.0.0", "changes": [{"at":"1.0.0-beta"}] },
+                    { "versionType": "semver-2.0.0", "version": "1.0.x", "lessThan": "2.0.0", "changes": [{"at":"bad"}] }
+                  ]
+                },
+                {
+                  "id": "pkg-2",
+                  "versions": [
+                    { "versionType": "semver", "version": "0", "lessThan": "2.0.*", "changes": [{"at":"0"}, {"at":"3.*"}] },
+                    { "versionType": "semver", "version": "1.2.3", "lessThanOrEqual": "1.2.x", "changes": [{"at":"nope"}] }
+                  ]
+                },
+                {
+                  "id": "pkg-3",
+                  "versions": [
+                    { "versionType": "other", "version": "whatever" }
+                  ]
+                }
+              ]
+            }
+          }
+        };
+        document.getElementById('input').value = JSON.stringify(sample, null, 2);
+      });
+
+      document.getElementById('btnSchemaSample').addEventListener('click', function(){
+        var schema = {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "abc": {
+              "type": "object",
+              "properties": {
+                "def": {
+                  "type": "object",
+                  "properties": {
+                    "affected": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "versions": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "versionType": {"type": "string"},
+                                "version": {"type": "string"},
+                                "lessThan": {"type": "string"},
+                                "lessThanOrEqual": {"type": "string"},
+                                "changes": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": { "at": {"type": "string"} },
+                                    "additionalProperties": true
+                                  }
+                                }
+                              },
+                              "additionalProperties": true
+                            }
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        };
+        document.getElementById('schema').value = JSON.stringify(schema, null, 2);
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init, { once: true });
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>
